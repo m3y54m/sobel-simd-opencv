@@ -1,8 +1,10 @@
-# SIMD + OpenCV
+# Sobel Filter + SIMD + OpenCV
 
 Using SIMD instructions in image processing using OpenCV
 
 https://software.intel.com/sites/landingpage/IntrinsicsGuide/
+
+https://en.wikipedia.org/wiki/Sobel_operator
 
 ## Build and Install OpenCV4
 
@@ -43,5 +45,5 @@ cmake --build .
 Supposed that you are in `build` directory:
 
 ```console
-./simd_opencv
+./sobel_simd_opencv
 ```

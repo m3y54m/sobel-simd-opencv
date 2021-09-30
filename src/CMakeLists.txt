@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.1)
 
 # Define project name
-project(simd_opencv_project)
+project(sobel_simd_opencv_project)
 
 # Find OpenCV, you may need to set OpenCV_DIR variable
 # to the absolute path to the directory containing OpenCVConfig.cmake file
@@ -24,10 +24,10 @@ message(STATUS "    libraries: ${OpenCV_LIBS}")
 message(STATUS "    include path: ${OpenCV_INCLUDE_DIRS}")
 
 # Declare the executable target built from your sources
-add_executable(simd_opencv main.cpp)
+add_executable(sobel_simd_opencv main.cpp)
 
 # Link your application with OpenCV libraries
-target_link_libraries(simd_opencv PRIVATE ${OpenCV_LIBS})
+target_link_libraries(sobel_simd_opencv PRIVATE ${OpenCV_LIBS})
 
 # Copy input file for image processing to build folder
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/monarch.jpg
