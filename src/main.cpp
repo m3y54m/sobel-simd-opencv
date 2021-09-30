@@ -11,32 +11,35 @@
 using namespace cv;
 using namespace std;
 
-int main(int argc, char** argv)
+double getElapsedTime(timespec &start, timespec &stop);
+void SobelNonSimd(Rect cropSize, Mat inputImage);
+void SobelSimd(Rect cropSize, Mat inputImage);
+void SobelOpenCV(Rect cropSize, Mat inputImage);
+
+// precise time measurement
+struct timespec t1, t2;
+double elapsedTime;
+
+// OpenCV image datatypes
+Mat originalImage;
+Mat resultImageNonSimd;
+Mat resultImageSimd;
+Mat resultImageOpenCV;
+
+uchar *outputPointer;
+uchar *inputPointer;
+
+int width;
+int height;
+
+// crop image and remove added borders
+const int border = 8;
+
+int main(int argc, char **argv)
 {
-	/* C coding style
-	//IplImage *imgInput, *imgOutputNonSIMD;
 
-	//imgInput = cvLoadImage("boat.png", CV_LOAD_IMAGE_GRAYSCALE);
-
-	//int width = imgInput->width;
-	//int height = imgInput->height;
-
-	//imgOutputNonSIMD = cvCreateImage(cvSize(width, height), IPL_DEPTH_8U, 1);
-
-	//cvNamedWindow("in", CV_WINDOW_AUTOSIZE);
-	//cvShowImage("in", imgInput);
-	*/
-
-	// precise time measurement
-	struct timespec t1, t2; // POSIX.1b structure for a time value
-	double elapsedTime;
-
-	// OpenCV image datatypes
-	Mat imgInput, imgOutputNonSIMD, imgOutputSIMD;
-
-	const int border = 8;
-
-	if (border < 1) {
+	if (border < 1)
+	{
 		cout << "border must be greater than or equal to 1" << endl;
 		cout << "Press any key to exit!" << endl;
 		getchar();
@@ -44,34 +47,68 @@ int main(int argc, char** argv)
 	}
 
 	// load input image
-	imgInput = imread("monarch.jpg", IMREAD_GRAYSCALE);
+	originalImage = imread("monarch.jpg", IMREAD_GRAYSCALE);
 
-	int initialWidth = imgInput.cols;
-	int initialHeight = imgInput.rows;
+	int imageWidth = originalImage.cols;
+	int imageHeight = originalImage.rows;
+
+	Rect cropped(border, border, imageWidth, imageHeight);
 
 	// show input image
 	namedWindow("Original", WINDOW_AUTOSIZE);
-	imshow("Original", imgInput);
-	
+	imshow("Original", originalImage);
 	// add border to image using replication method
-	copyMakeBorder(imgInput, imgInput, border, border, border, border, BORDER_REPLICATE);
+	copyMakeBorder(originalImage, originalImage, border, border, border, border, BORDER_REPLICATE);
 
-	/*********** Non-SIMD **********/
+	/******************* Non-SIMD ********************/
 
-	// allocate new array data for imgOutputNonSIMD with the same size as imgInput.
-	imgOutputNonSIMD.create(imgInput.size(), imgInput.depth());
+	SobelNonSimd(cropped, originalImage);
+
+	namedWindow("Sobel-Non-SIMD", WINDOW_AUTOSIZE);
+	imshow("Sobel-Non-SIMD", resultImageNonSimd);
+
+	/********************** SIMD *********************/
+
+	SobelSimd(cropped, originalImage);
+
+	namedWindow("Sobel-SIMD", WINDOW_AUTOSIZE);
+	imshow("Sobel-SIMD", resultImageSimd);
+
+	/************* OpenCV Built-in Sobel *************/
+
+	SobelOpenCV(cropped, originalImage);
+
+	namedWindow("Sobel-OpenCV", WINDOW_AUTOSIZE);
+	imshow("Sobel-OpenCV", resultImageOpenCV);
+
+	waitKey(); // Wait for a keystroke in the window
+	getchar();
+	return 0;
+}
+
+double getElapsedTime(timespec &start, timespec &stop)
+{
+	return 1.0e6 * (stop.tv_sec - start.tv_sec) + 1.0e-3 * (stop.tv_nsec - start.tv_nsec);
+}
+
+void SobelNonSimd(Rect cropSize, Mat inputImage)
+{
+	Mat outputImage;
+
+	// allocate new array data for outputImage with the same size as inputImage.
+	outputImage.create(inputImage.size(), inputImage.depth());
 
 	uchar m1, m2, m3, m4, m5, m6, m7, m8, m9;
 	int Gx, Gy;
 
-	uchar* outputPointer = imgOutputNonSIMD.ptr<uchar>();
-	uchar* inputPointer = imgInput.ptr<uchar>();
+	outputPointer = outputImage.ptr<uchar>();
+	inputPointer = inputImage.ptr<uchar>();
 
-	int width = imgInput.cols;
-	int height = imgInput.rows;
+	width = inputImage.cols;
+	height = inputImage.rows;
 
 	// start timer
-	clock_gettime(CLOCK_MONOTONIC, &t1); // POSIX; use timespec_get in C11
+	clock_gettime(CLOCK_MONOTONIC, &t1);
 
 	for (int i = (border - 1); i < height - (border + 1); i++) //rows
 	{
@@ -111,41 +148,42 @@ int main(int argc, char** argv)
 		}
 	}
 
-
 	// stop timer
-	clock_gettime(CLOCK_MONOTONIC, &t2); // POSIX; use timespec_get in C11
+	clock_gettime(CLOCK_MONOTONIC, &t2);
 	// calculate and print elapsed time in microseconds
-	elapsedTime = 1.0e6*t2.tv_sec + 1.0e-3*t2.tv_nsec - (1.0e6*t1.tv_sec + 1.0e-3*t1.tv_nsec);
+	elapsedTime = getElapsedTime(t1, t2);
 	cout << "Execution time for non-SIMD Sobel edge detection:" << endl;
 	cout << elapsedTime << " us" << endl;
 
-	// crop image and remove added borders
-	Rect cropped(border, border, initialWidth, initialHeight);
-	imgOutputNonSIMD = imgOutputNonSIMD(cropped);
+	outputImage = outputImage(cropSize);
 
-	// show non-SIMD output image
-	namedWindow("Sobel-Non-SIMD", WINDOW_AUTOSIZE);
-	imshow("Sobel-Non-SIMD", imgOutputNonSIMD);
+	// Copy outputImage to resultImageNonSimd
+	resultImageNonSimd = outputImage.clone();
+}
 
-	/*********** SIMD **********/
+void SobelSimd(Rect cropSize, Mat inputImage)
+{
+	Mat outputImage;
 
-	//imgInput = imread("boat.png", IMREAD_GRAYSCALE);
-	imgOutputSIMD.create(imgInput.size(), imgInput.depth());
+	//inputImage = imread("boat.png", IMREAD_GRAYSCALE);
+	outputImage.create(inputImage.size(), inputImage.depth());
 
 	__m128i p1, p2, p3, p4, p5, p6, p7, p8, p9;
 	__m128i gx, gy, temp, G;
 
-	outputPointer = imgOutputSIMD.ptr<uchar>();
-	inputPointer = imgInput.ptr<uchar>();
+	outputPointer = outputImage.ptr<uchar>();
+	inputPointer = inputImage.ptr<uchar>();
 
-	//width = imgInput.cols;
-	//height = imgInput.rows;
+	width = inputImage.cols;
+	height = inputImage.rows;
 
 	// start timer
-	clock_gettime(CLOCK_MONOTONIC, &t1); // POSIX; use timespec_get in C11
+	clock_gettime(CLOCK_MONOTONIC, &t1);
 
-	for (int i = (border - 1); i < height - (border + 1); i += 1) {
-		for (int j = (border - 1); j < width - (2 * border - 1); j += 8) {
+	for (int i = (border - 1); i < height - (border + 1); i += 1)
+	{
+		for (int j = (border - 1); j < width - (2 * border - 1); j += 8)
+		{
 
 			/*
 			Sobel operator input matrix
@@ -163,17 +201,17 @@ int main(int argc, char** argv)
 			Load 128-bits of integer data from memory into dst. mem_addr does not need to be aligned on any particular boundary.
 			*/
 
-			p1 = _mm_loadu_si128((__m128i*)(inputPointer + i * width + j));
-			p2 = _mm_loadu_si128((__m128i*)(inputPointer + i * width + j + 1));
-			p3 = _mm_loadu_si128((__m128i*)(inputPointer + i * width + j + 2));
+			p1 = _mm_loadu_si128((__m128i *)(inputPointer + i * width + j));
+			p2 = _mm_loadu_si128((__m128i *)(inputPointer + i * width + j + 1));
+			p3 = _mm_loadu_si128((__m128i *)(inputPointer + i * width + j + 2));
 
-			p4 = _mm_loadu_si128((__m128i*)(inputPointer + (i + 1) * width + j));
-			p5 = _mm_loadu_si128((__m128i*)(inputPointer + (i + 1) * width + j + 1));
-			p6 = _mm_loadu_si128((__m128i*)(inputPointer + (i + 1) * width + j + 2));
+			p4 = _mm_loadu_si128((__m128i *)(inputPointer + (i + 1) * width + j));
+			p5 = _mm_loadu_si128((__m128i *)(inputPointer + (i + 1) * width + j + 1));
+			p6 = _mm_loadu_si128((__m128i *)(inputPointer + (i + 1) * width + j + 2));
 
-			p7 = _mm_loadu_si128((__m128i*)(inputPointer + (i + 2) * width + j));
-			p8 = _mm_loadu_si128((__m128i*)(inputPointer + (i + 2) * width + j + 1));
-			p9 = _mm_loadu_si128((__m128i*)(inputPointer + (i + 2) * width + j + 2));
+			p7 = _mm_loadu_si128((__m128i *)(inputPointer + (i + 2) * width + j));
+			p8 = _mm_loadu_si128((__m128i *)(inputPointer + (i + 2) * width + j + 1));
+			p9 = _mm_loadu_si128((__m128i *)(inputPointer + (i + 2) * width + j + 2));
 
 			/* 
 			__m128i _mm_srli_epi16 (__m128i a, int imm8)
@@ -203,22 +241,22 @@ int main(int argc, char** argv)
 			*/
 
 			// Calculating Gx = (p3 + 2 * p6 + p9) - (p1 + 2 * p4 + p7)
-			gx = _mm_add_epi16(p6, p6);		// 2*p6
-			gx = _mm_add_epi16(gx, p3);		// p3 + 2*p6
-			gx = _mm_add_epi16(gx, p9);		// p3 + 2*p6 + p9
-			gx = _mm_sub_epi16(gx, p1);		// p3 + 2*p6 + p9 - p1
-			temp = _mm_add_epi16(p4, p4);	// 2*p4
-			gx = _mm_sub_epi16(gx, temp);	// p3 + 2*p6 + p9 - (p1 + 2*p4)
-			gx = _mm_sub_epi16(gx, p7);		// p3 + 2*p6 + p9 - (p1 + 2*p4 + p7)
+			gx = _mm_add_epi16(p6, p6);	  // 2*p6
+			gx = _mm_add_epi16(gx, p3);	  // p3 + 2*p6
+			gx = _mm_add_epi16(gx, p9);	  // p3 + 2*p6 + p9
+			gx = _mm_sub_epi16(gx, p1);	  // p3 + 2*p6 + p9 - p1
+			temp = _mm_add_epi16(p4, p4); // 2*p4
+			gx = _mm_sub_epi16(gx, temp); // p3 + 2*p6 + p9 - (p1 + 2*p4)
+			gx = _mm_sub_epi16(gx, p7);	  // p3 + 2*p6 + p9 - (p1 + 2*p4 + p7)
 
 			// Calculating Gy = (p1 + 2 * p2 + p3) - (p7 + 2 * p8 + p9)
-			gy = _mm_add_epi16(p2, p2);		// 2*p2
-			gy = _mm_add_epi16(gy, p1);		// p1 + 2*p2
-			gy = _mm_add_epi16(gy, p3);		// p1 + 2*p2 + p3
-			gy = _mm_sub_epi16(gy, p7);		// p1 + 2*p2 + p3 - p7
-			temp = _mm_add_epi16(p8, p8);	// 2*p8
-			gy = _mm_sub_epi16(gy, temp);	// p1 + 2*p2 + p3 - (p7 + 2*p8)
-			gy = _mm_sub_epi16(gy, p9);		// p1 + 2*p2 + p3 - (p7 + 2*p8 + p9)
+			gy = _mm_add_epi16(p2, p2);	  // 2*p2
+			gy = _mm_add_epi16(gy, p1);	  // p1 + 2*p2
+			gy = _mm_add_epi16(gy, p3);	  // p1 + 2*p2 + p3
+			gy = _mm_sub_epi16(gy, p7);	  // p1 + 2*p2 + p3 - p7
+			temp = _mm_add_epi16(p8, p8); // 2*p8
+			gy = _mm_sub_epi16(gy, temp); // p1 + 2*p2 + p3 - (p7 + 2*p8)
+			gy = _mm_sub_epi16(gy, p9);	  // p1 + 2*p2 + p3 - (p7 + 2*p8 + p9)
 
 			/*
 			__m128i _mm_abs_epi16 (__m128i a)
@@ -241,66 +279,58 @@ int main(int argc, char** argv)
 			void _mm_storeu_si128 (__m128i* mem_addr, __m128i a)
 			Store 128-bits of integer data from a into memory. mem_addr does not need to be aligned on any particular boundary.
 			*/
-			_mm_storeu_si128((__m128i*)(outputPointer + (i + 1) * width + j + 1), G);
-
+			_mm_storeu_si128((__m128i *)(outputPointer + (i + 1) * width + j + 1), G);
 		}
 	}
 
 	// stop timer
-	clock_gettime(CLOCK_MONOTONIC, &t2); // POSIX; use timespec_get in C11
+	clock_gettime(CLOCK_MONOTONIC, &t2);
 	// calculate and print elapsed time in microseconds
-	elapsedTime = 1.0e6*t2.tv_sec + 1.0e-3*t2.tv_nsec - (1.0e6*t1.tv_sec + 1.0e-3*t1.tv_nsec);
+	elapsedTime = getElapsedTime(t1, t2);
 	cout << "Execution time for SIMD Sobel edge detection:" << endl;
 	cout << elapsedTime << " us" << endl;
 
 	// crop image and remove added borders
-	imgOutputSIMD = imgOutputSIMD(cropped);
+	outputImage = outputImage(cropSize);
 
-	// show SIMD output image
-	namedWindow("Sobel-SIMD", WINDOW_AUTOSIZE);
-	imshow("Sobel-SIMD", imgOutputSIMD);
+	// Copy outputImage to resultImageSimd
+	resultImageSimd = outputImage.clone();
+}
 
-	/************* OpenCV Built-in Sobel *************/
+void SobelOpenCV(Rect cropSize, Mat inputImage)
+{
+	Mat outputImage;
 
 	/// Generate grad_x and grad_y
 	Mat grad_x, grad_y;
 	Mat abs_grad_x, abs_grad_y;
-	Mat src;
-	Mat grad;
 	int scale = 1;
 	int delta = 0;
 	int ddepth = CV_8U;
 
-	src = imgInput(cropped);
+	inputImage = inputImage(cropSize);
 
 	// start timer
-	clock_gettime(CLOCK_MONOTONIC, &t1); // POSIX; use timespec_get in C11
+	clock_gettime(CLOCK_MONOTONIC, &t1);
 
 	// Gradient X
-	Sobel(src, grad_x, ddepth, 1, 0, 3, scale, delta, BORDER_DEFAULT);
+	Sobel(inputImage, grad_x, ddepth, 1, 0, 3, scale, delta, BORDER_DEFAULT);
 	convertScaleAbs(grad_x, abs_grad_x, 1, 0);
 
 	// Gradient Y
-	Sobel(src, grad_y, ddepth, 0, 1, 3, scale, delta, BORDER_DEFAULT);
+	Sobel(inputImage, grad_y, ddepth, 0, 1, 3, scale, delta, BORDER_DEFAULT);
 	convertScaleAbs(grad_y, abs_grad_y, 1, 0);
 
 	/// Total Gradient (approximate)
-	addWeighted(abs_grad_x, 2.0, abs_grad_y, 2.0, 0, grad);
+	addWeighted(abs_grad_x, 2.0, abs_grad_y, 2.0, 0, outputImage);
 
 	// stop timer
-	clock_gettime(CLOCK_MONOTONIC, &t2); // POSIX; use timespec_get in C11
+	clock_gettime(CLOCK_MONOTONIC, &t2);
 	// calculate and print elapsed time in microseconds
-	elapsedTime = 1.0e6*t2.tv_sec + 1.0e-3*t2.tv_nsec - (1.0e6*t1.tv_sec + 1.0e-3*t1.tv_nsec);
+	elapsedTime = getElapsedTime(t1, t2);
 	cout << "Execution time for OpenCV Sobel edge detection:" << endl;
 	cout << elapsedTime << " us" << endl;
 
-	namedWindow("Sobel-OpenCV", WINDOW_AUTOSIZE);
-	imshow("Sobel-OpenCV", grad);
-
-	waitKey(); // Wait for a keystroke in the window
-	getchar();
-	return 0;
+	// Copy outputImage to resultImageOpenCV
+	resultImageOpenCV = outputImage.clone();
 }
-
-//imgInput.copyTo(imgOutputNonSIMD);
-//bitwise_not(imgInput, imgOutputNonSIMD);
