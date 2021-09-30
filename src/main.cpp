@@ -1,21 +1,12 @@
-//First we set an enviroment variable to make easier our work.This will hold the build directory of our OpenCV library that we use in our projects.Start up a command window and enter :
-//
-//setx - m OPENCV_DIR D : \OpenCV\Build\x86\vc10(suggested for Visual Studio 2010 - 32 bit Windows)
-//setx - m OPENCV_DIR D : \OpenCV\Build\x64\vc10(suggested for Visual Studio 2010 - 64 bit Windows)
-//
-//setx - m OPENCV_DIR D : \OpenCV\Build\x86\vc11(suggested for Visual Studio 2012 - 32 bit Windows)
-//setx - m OPENCV_DIR D : \OpenCV\Build\x64\vc11(suggested for Visual Studio 2012 - 64 bit Windows)
-//
-//And add %OPENCV_DIR%\bin to Path in enviroment variables
+// Refactored for build in Ubuntu
 
 #include <opencv2/opencv.hpp>
 #include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <intrin.h>
-#include <Windows.h>
-//#include <chrono>
+#include <x86intrin.h>
+#include <time.h>
 
 using namespace cv;
 using namespace std;
@@ -37,11 +28,8 @@ int main(int argc, char** argv)
 	*/
 
 	// precise time measurement
-	LARGE_INTEGER frequency;        // ticks per second
-	LARGE_INTEGER t1, t2;           // ticks
+	struct timespec t1, t2; // POSIX.1b structure for a time value
 	double elapsedTime;
-	QueryPerformanceFrequency(&frequency); // get ticks per second
-	double microseconds_per_count = 1.0e6 / static_cast<double>(frequency.QuadPart);
 
 	// OpenCV image datatypes
 	Mat imgInput, imgOutputNonSIMD, imgOutputSIMD;
@@ -56,13 +44,13 @@ int main(int argc, char** argv)
 	}
 
 	// load input image
-	imgInput = imread("monarch.jpg", CV_LOAD_IMAGE_GRAYSCALE);
+	imgInput = imread("monarch.jpg", IMREAD_GRAYSCALE);
 
 	int initialWidth = imgInput.cols;
 	int initialHeight = imgInput.rows;
 
 	// show input image
-	namedWindow("Original", CV_WINDOW_AUTOSIZE);
+	namedWindow("Original", WINDOW_AUTOSIZE);
 	imshow("Original", imgInput);
 	
 	// add border to image using replication method
@@ -82,9 +70,8 @@ int main(int argc, char** argv)
 	int width = imgInput.cols;
 	int height = imgInput.rows;
 
-	// get the current cpu time
-	QueryPerformanceCounter(&t1); // start timer
-	//auto begin = chrono::high_resolution_clock::now();
+	// start timer
+	clock_gettime(CLOCK_MONOTONIC, &t1); // POSIX; use timespec_get in C11
 
 	for (int i = (border - 1); i < height - (border + 1); i++) //rows
 	{
@@ -124,26 +111,25 @@ int main(int argc, char** argv)
 		}
 	}
 
-	// get the current cpu time
-	QueryPerformanceCounter(&t2); // stop timer
+
+	// stop timer
+	clock_gettime(CLOCK_MONOTONIC, &t2); // POSIX; use timespec_get in C11
 	// calculate and print elapsed time in microseconds
-	elapsedTime = static_cast<double>(t2.QuadPart - t1.QuadPart) * microseconds_per_count;
+	elapsedTime = 1.0e6*t2.tv_sec + 1.0e-3*t2.tv_nsec - (1.0e6*t1.tv_sec + 1.0e-3*t1.tv_nsec);
 	cout << "Execution time for non-SIMD Sobel edge detection:" << endl;
 	cout << elapsedTime << " us" << endl;
-	//auto end = std::chrono::high_resolution_clock::now();
-	//std::cout << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "ns" << std::endl;
 
 	// crop image and remove added borders
 	Rect cropped(border, border, initialWidth, initialHeight);
 	imgOutputNonSIMD = imgOutputNonSIMD(cropped);
 
 	// show non-SIMD output image
-	namedWindow("Sobel-Non-SIMD", CV_WINDOW_AUTOSIZE);
+	namedWindow("Sobel-Non-SIMD", WINDOW_AUTOSIZE);
 	imshow("Sobel-Non-SIMD", imgOutputNonSIMD);
 
 	/*********** SIMD **********/
 
-	//imgInput = imread("boat.png", CV_LOAD_IMAGE_GRAYSCALE);
+	//imgInput = imread("boat.png", IMREAD_GRAYSCALE);
 	imgOutputSIMD.create(imgInput.size(), imgInput.depth());
 
 	__m128i p1, p2, p3, p4, p5, p6, p7, p8, p9;
@@ -155,8 +141,8 @@ int main(int argc, char** argv)
 	//width = imgInput.cols;
 	//height = imgInput.rows;
 
-	// get the current cpu time
-	QueryPerformanceCounter(&t1); // start timer
+	// start timer
+	clock_gettime(CLOCK_MONOTONIC, &t1); // POSIX; use timespec_get in C11
 
 	for (int i = (border - 1); i < height - (border + 1); i += 1) {
 		for (int j = (border - 1); j < width - (2 * border - 1); j += 8) {
@@ -260,10 +246,10 @@ int main(int argc, char** argv)
 		}
 	}
 
-	// get the current cpu time
-	QueryPerformanceCounter(&t2); // stop timer
+	// stop timer
+	clock_gettime(CLOCK_MONOTONIC, &t2); // POSIX; use timespec_get in C11
 	// calculate and print elapsed time in microseconds
-	elapsedTime = static_cast<double>(t2.QuadPart - t1.QuadPart) * microseconds_per_count;
+	elapsedTime = 1.0e6*t2.tv_sec + 1.0e-3*t2.tv_nsec - (1.0e6*t1.tv_sec + 1.0e-3*t1.tv_nsec);
 	cout << "Execution time for SIMD Sobel edge detection:" << endl;
 	cout << elapsedTime << " us" << endl;
 
@@ -271,7 +257,7 @@ int main(int argc, char** argv)
 	imgOutputSIMD = imgOutputSIMD(cropped);
 
 	// show SIMD output image
-	namedWindow("Sobel-SIMD", CV_WINDOW_AUTOSIZE);
+	namedWindow("Sobel-SIMD", WINDOW_AUTOSIZE);
 	imshow("Sobel-SIMD", imgOutputSIMD);
 
 	/************* OpenCV Built-in Sobel *************/
@@ -287,8 +273,8 @@ int main(int argc, char** argv)
 
 	src = imgInput(cropped);
 
-	// get the current cpu time
-	QueryPerformanceCounter(&t1); // start timer
+	// start timer
+	clock_gettime(CLOCK_MONOTONIC, &t1); // POSIX; use timespec_get in C11
 
 	// Gradient X
 	Sobel(src, grad_x, ddepth, 1, 0, 3, scale, delta, BORDER_DEFAULT);
@@ -301,14 +287,14 @@ int main(int argc, char** argv)
 	/// Total Gradient (approximate)
 	addWeighted(abs_grad_x, 2.0, abs_grad_y, 2.0, 0, grad);
 
-	// get the current cpu time
-	QueryPerformanceCounter(&t2); // stop timer
+	// stop timer
+	clock_gettime(CLOCK_MONOTONIC, &t2); // POSIX; use timespec_get in C11
 	// calculate and print elapsed time in microseconds
-	elapsedTime = static_cast<double>(t2.QuadPart - t1.QuadPart) * microseconds_per_count;
+	elapsedTime = 1.0e6*t2.tv_sec + 1.0e-3*t2.tv_nsec - (1.0e6*t1.tv_sec + 1.0e-3*t1.tv_nsec);
 	cout << "Execution time for OpenCV Sobel edge detection:" << endl;
 	cout << elapsedTime << " us" << endl;
 
-	namedWindow("Sobel-OpenCV", CV_WINDOW_AUTOSIZE);
+	namedWindow("Sobel-OpenCV", WINDOW_AUTOSIZE);
 	imshow("Sobel-OpenCV", grad);
 
 	waitKey(); // Wait for a keystroke in the window
