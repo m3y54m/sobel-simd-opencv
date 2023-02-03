@@ -8,7 +8,7 @@ https://en.wikipedia.org/wiki/Sobel_operator
 
 ## Build and Install OpenCV4
 
-https://github.com/m3y54m/build-opencv4-in-ubuntu
+I've explained the build and installation steps in this gist: [Build OpenCV 4 in Ubuntu](https://gist.github.com/m3y54m/4f9b960e52f0da4e62e5a36f71d04fd7)
 
 ## Configure project
 
