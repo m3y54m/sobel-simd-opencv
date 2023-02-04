@@ -5,20 +5,50 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <x86intrin.h>
+
+// Precise Time Measurement
+#if defined(_WIN32) || defined(__CYGWIN__)
+// Windows (x86 or x64)
+#include <windows.h>
+#elif defined(__linux__)
+// Linux
 #include <time.h>
+#else
+#error Unknown environment!
+#endif
+
+// Intel x86 SIMD Intrinsics
+#if defined(_MSC_VER)
+/* Microsoft C/C++-compatible compiler */
+#include <intrin.h>
+#elif defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
+/* GCC-compatible compiler, targeting x86/x86-64 */
+#include <x86intrin.h>
+#elif defined(__GNUC__) && defined(__ARM_NEON__)
+/* GCC-compatible compiler, targeting ARM with NEON */
+#include <arm_neon.h>
+#elif defined(__GNUC__) && defined(__IWMMXT__)
+/* GCC-compatible compiler, targeting ARM with WMMX */
+#include <mmintrin.h>
+#elif (defined(__GNUC__) || defined(__xlC__)) && (defined(__VEC__) || defined(__ALTIVEC__))
+/* XLC or GCC-compatible compiler, targeting PowerPC with VMX/VSX */
+#include <altivec.h>
+#elif defined(__GNUC__) && defined(__SPE__)
+/* GCC-compatible compiler, targeting PowerPC with SPE */
+#include <spe.h>
+#endif
 
 using namespace cv;
 using namespace std;
 
-double getElapsedTime(timespec &start, timespec &stop);
+unsigned long calculateElapsedTime(unsigned long start, unsigned long stop);
+unsigned long getCurrentTimeInMicroseconds();
 void SobelNonSimd(Rect cropSize, Mat inputImage);
 void SobelSimd(Rect cropSize, Mat inputImage);
 void SobelOpenCV(Rect cropSize, Mat inputImage);
 
 // precise time measurement
-struct timespec t1, t2;
-double elapsedTime;
+unsigned long t1, t2, elapsedTime;
 
 // OpenCV image datatypes
 Mat originalImage;
@@ -37,7 +67,6 @@ const int border = 8;
 
 int main(int argc, char **argv)
 {
-
     if (border < 1)
     {
         cout << "border must be greater than or equal to 1" << endl;
@@ -86,9 +115,29 @@ int main(int argc, char **argv)
     return 0;
 }
 
-double getElapsedTime(timespec &start, timespec &stop)
+unsigned long calculateElapsedTime(unsigned long start, unsigned long stop)
 {
-    return 1.0e6 * (stop.tv_sec - start.tv_sec) + 1.0e-3 * (stop.tv_nsec - start.tv_nsec);
+    return stop - start;
+}
+
+unsigned long getCurrentTimeInMicroseconds()
+{
+#if defined(_WIN32) || defined(__CYGWIN__)
+    // Windows (x86 or x64)
+    LARGE_INTEGER freq;
+    LARGE_INTEGER t;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&t);
+    return (unsigned long)((1.0e6 * t.QuadPart) / freq.QuadPart);
+#elif defined(__linux__)
+    // Linux
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (unsigned long)(1.0e6 * t.tv_sec + 1.0e-3 * t.tv_nsec);
+#else
+    return 0;
+#error Unknown environment!
+#endif
 }
 
 void SobelNonSimd(Rect cropSize, Mat inputImage)
@@ -108,9 +157,9 @@ void SobelNonSimd(Rect cropSize, Mat inputImage)
     height = inputImage.rows;
 
     // start timer
-    clock_gettime(CLOCK_MONOTONIC, &t1);
+    t1 = getCurrentTimeInMicroseconds();
 
-    for (int i = (border - 1); i < height - (border + 1); i++) //rows
+    for (int i = (border - 1); i < height - (border + 1); i++) // rows
     {
         for (int j = (border - 1); j < width - (border + 1); j++) // cols
         {
@@ -122,7 +171,7 @@ void SobelNonSimd(Rect cropSize, Mat inputImage)
             |~~~~+~~~~+~~~~+
             | m4 | m5 | m6 |
             |~~~~+~~~~+~~~~+
-            | m7 | m8 | m9 |  
+            | m7 | m8 | m9 |
             +~~~~+~~~~+~~~~+
             */
 
@@ -149,9 +198,9 @@ void SobelNonSimd(Rect cropSize, Mat inputImage)
     }
 
     // stop timer
-    clock_gettime(CLOCK_MONOTONIC, &t2);
+    t2 = getCurrentTimeInMicroseconds();
     // calculate and print elapsed time in microseconds
-    elapsedTime = getElapsedTime(t1, t2);
+    elapsedTime = calculateElapsedTime(t1, t2);
     cout << "Execution time for non-SIMD Sobel edge detection:" << endl;
     cout << elapsedTime << " us" << endl;
 
@@ -165,7 +214,7 @@ void SobelSimd(Rect cropSize, Mat inputImage)
 {
     Mat outputImage;
 
-    //inputImage = imread("boat.png", IMREAD_GRAYSCALE);
+    // inputImage = imread("boat.png", IMREAD_GRAYSCALE);
     outputImage.create(inputImage.size(), inputImage.depth());
 
     __m128i p1, p2, p3, p4, p5, p6, p7, p8, p9;
@@ -178,7 +227,7 @@ void SobelSimd(Rect cropSize, Mat inputImage)
     height = inputImage.rows;
 
     // start timer
-    clock_gettime(CLOCK_MONOTONIC, &t1);
+    t1 = getCurrentTimeInMicroseconds();
 
     for (int i = (border - 1); i < height - (border + 1); i += 1)
     {
@@ -213,7 +262,7 @@ void SobelSimd(Rect cropSize, Mat inputImage)
             p8 = _mm_loadu_si128((__m128i *)(inputPointer + (i + 2) * width + j + 1));
             p9 = _mm_loadu_si128((__m128i *)(inputPointer + (i + 2) * width + j + 2));
 
-            /* 
+            /*
             __m128i _mm_srli_epi16 (__m128i a, int imm8)
             Shift packed 16-bit integers in a right by imm8 while shifting in zeros, and store the Gs in dst.
 
@@ -284,9 +333,9 @@ void SobelSimd(Rect cropSize, Mat inputImage)
     }
 
     // stop timer
-    clock_gettime(CLOCK_MONOTONIC, &t2);
+    t2 = getCurrentTimeInMicroseconds();
     // calculate and print elapsed time in microseconds
-    elapsedTime = getElapsedTime(t1, t2);
+    elapsedTime = calculateElapsedTime(t1, t2);
     cout << "Execution time for SIMD Sobel edge detection:" << endl;
     cout << elapsedTime << " us" << endl;
 
@@ -311,7 +360,7 @@ void SobelOpenCV(Rect cropSize, Mat inputImage)
     inputImage = inputImage(cropSize);
 
     // start timer
-    clock_gettime(CLOCK_MONOTONIC, &t1);
+    t1 = getCurrentTimeInMicroseconds();
 
     // Gradient X
     Sobel(inputImage, grad_x, ddepth, 1, 0, 3, scale, delta, BORDER_DEFAULT);
@@ -325,9 +374,9 @@ void SobelOpenCV(Rect cropSize, Mat inputImage)
     addWeighted(abs_grad_x, 2.0, abs_grad_y, 2.0, 0, outputImage);
 
     // stop timer
-    clock_gettime(CLOCK_MONOTONIC, &t2);
+    t2 = getCurrentTimeInMicroseconds();
     // calculate and print elapsed time in microseconds
-    elapsedTime = getElapsedTime(t1, t2);
+    elapsedTime = calculateElapsedTime(t1, t2);
     cout << "Execution time for OpenCV Sobel edge detection:" << endl;
     cout << elapsedTime << " us" << endl;
 

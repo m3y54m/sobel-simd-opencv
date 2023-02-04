@@ -9,9 +9,11 @@ project(sobel_simd_opencv_project)
 # via the command line or GUI
 find_package(OpenCV REQUIRED)
 
-# Enable SIMD instructions fron Intel Intrinsics
+# Enable SIMD instructions for Intel Intrinsics
 # https://software.intel.com/sites/landingpage/IntrinsicsGuide/
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx")
+if(NOT WIN32)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx")
+endif()
 
 # If the package has been found, several variables will
 # be set, you can find the full list with descriptions
@@ -31,4 +33,4 @@ target_link_libraries(sobel_simd_opencv PRIVATE ${OpenCV_LIBS})
 
 # Copy input file for image processing to build folder
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/monarch.jpg
-        DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+    DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
