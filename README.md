@@ -2,7 +2,7 @@
 
 Using SIMD instructions in image processing using OpenCV
 
-
+![image](https://user-images.githubusercontent.com/1549028/216737449-f7c5dcb6-563e-45bd-98a7-9eb0e9e5575b.png)
 
 ## Build and Install OpenCV4
 
